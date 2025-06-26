@@ -6,6 +6,9 @@ import librosa
 import whisper
 from transformers import pipeline
 import torch
+import numpy as np
+from collections import defaultdict
+import cv2
 
 def analyze_mood(video_path):
     # Create temp directory and extract audio
@@ -20,12 +23,34 @@ def analyze_mood(video_path):
     transcription = model_whisper.transcribe(audio_path)
     transcript = transcription['text']
 
-    # Facial emotion analysis
-    face_emotion_result = DeepFace.analyze(
-        img_path=video_path, actions=['emotion'], enforce_detection=False
-    )
-    dominant_facial_emotion = face_emotion_result[0]['dominant_emotion']
-    facial_emotions = face_emotion_result[0]['emotion']
+    # --- Facial Emotion Analysis from Multiple Frames ---
+    cap = cv2.VideoCapture(video_path)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_indices = [frame_count // 4, frame_count // 2, (3 * frame_count) // 4]
+
+    emotion_scores = []
+    for idx in frame_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if ret:
+            frame_path = os.path.join(temp_dir, f"frame_{idx}.jpg")
+            cv2.imwrite(frame_path, frame)
+            result = DeepFace.analyze(img_path=frame_path, actions=['emotion'], enforce_detection=False)[0]
+            emotion_scores.append(result['emotion'])
+    cap.release()
+
+    avg_emotions = defaultdict(float)
+    for emo_dict in emotion_scores:
+        for k, v in emo_dict.items():
+            avg_emotions[k] += v / len(emotion_scores)
+
+    dominant_facial_emotion = max(avg_emotions, key=avg_emotions.get)
+    # # Facial emotion analysis
+    # face_emotion_result = DeepFace.analyze(
+    #     img_path=video_path, actions=['emotion'], enforce_detection=False
+    # )
+    # dominant_facial_emotion = face_emotion_result[0]['dominant_emotion']
+    # facial_emotions = face_emotion_result[0]['emotion']
 
     # Sentiment from transcript
     sentiment_analyzer = pipeline("sentiment-analysis")
@@ -38,7 +63,7 @@ def analyze_mood(video_path):
 
     # Print results
     print("\n🎤 Transcript:", transcript)
-    print("\n🙂 Facial Emotion Scores:", facial_emotions)
+    print("\n🙂 Facial Emotion Scores:", dict(avg_emotions))
     print("😎 Dominant Facial Emotion:", dominant_facial_emotion)
     print("\n🗣 Text Sentiment:", sentiment_result)
     print(f"\n📊 Voice Features → Avg Pitch: {pitch:.2f}, Energy: {energy:.5f}")

@@ -1,0 +1,7 @@
+deepface
+moviepy
+librosa
+openai-whisper
+transformers
+scipy
+opencv-python==4.9.0.80
